@@ -641,7 +641,17 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             isICloudEnabled: buildConfig.isICloudEnabled
         )
         
-        guard let appGroupUrl = maybeAppGroupUrl else {
+        // App Groups are a paid-membership capability, so a build signed with a free
+        // Apple ID has no shared container. Fall back to the app's own sandbox; this
+        // only rules out sharing state with the extensions, which such a build cannot
+        // install anyway.
+        let appGroupUrl: URL
+        if let maybeAppGroupUrl = maybeAppGroupUrl {
+            appGroupUrl = maybeAppGroupUrl
+        } else if let fallbackUrl = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first?.appendingPathComponent("AppGroupFallback") {
+            let _ = try? FileManager.default.createDirectory(at: fallbackUrl, withIntermediateDirectories: true, attributes: nil)
+            appGroupUrl = fallbackUrl
+        } else {
             self.mainWindow?.presentNative(UIAlertController(title: nil, message: "Error 2", preferredStyle: .alert))
             return true
         }
