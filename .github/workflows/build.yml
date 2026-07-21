@@ -44,33 +44,22 @@ jobs:
       - name: Select Xcode
         run: |
           ls -la /Applications | grep -i xcode || true
-          realpath_of() { python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$1"; }
+          PINNED=$(python3 -c 'import json;print(json.load(open("versions.json"))["xcode"])')
+          # prefer the exact version versions.json pins, then any other Xcode 26.x
+          CANDIDATES="/Applications/Xcode_$PINNED.app /Applications/Xcode_$PINNED.0.app"
+          CANDIDATES="$CANDIDATES $(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -rV) /Applications/Xcode.app"
           XCODE=""
-          for candidate in $(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -rV) /Applications/Xcode.app; do
+          for candidate in $CANDIDATES; do
             if [ -x "$candidate/Contents/Developer/usr/bin/xcodebuild" ]; then
-              XCODE=$(realpath_of "$candidate")
+              XCODE=$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$candidate")
               break
             fi
           done
           if [ -z "$XCODE" ]; then echo "No usable Xcode found"; exit 1; fi
-          echo "Using $XCODE"
+          echo "Using $XCODE (pinned: $PINNED)"
           sudo xcode-select -s "$XCODE/Contents/Developer"
           xcodebuild -version
-          echo "SELECTED_XCODE=$XCODE" >> $GITHUB_ENV
-
-      - name: Free up disk space
-        run: |
-          df -h /
-          realpath_of() { python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$1"; }
-          # drop every Xcode bundle except the one we selected (resolve symlinks so we
-          # never delete the target the selected symlink points at)
-          for app in /Applications/Xcode*.app; do
-            if [ "$(realpath_of "$app")" != "$SELECTED_XCODE" ]; then
-              sudo rm -rf "$app"
-            fi
-          done
-          sudo rm -rf ~/Library/Developer/CoreSimulator/Caches || true
-          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-path
           df -h /
 
       - name: Compute build number
