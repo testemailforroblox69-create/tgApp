@@ -41,25 +41,37 @@ jobs:
           submodules: 'recursive'
           fetch-depth: 1
 
+      - name: Select Xcode
+        run: |
+          ls -la /Applications | grep -i xcode || true
+          realpath_of() { python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$1"; }
+          XCODE=""
+          for candidate in $(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -rV) /Applications/Xcode.app; do
+            if [ -x "$candidate/Contents/Developer/usr/bin/xcodebuild" ]; then
+              XCODE=$(realpath_of "$candidate")
+              break
+            fi
+          done
+          if [ -z "$XCODE" ]; then echo "No usable Xcode found"; exit 1; fi
+          echo "Using $XCODE"
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+          echo "SELECTED_XCODE=$XCODE" >> $GITHUB_ENV
+
       - name: Free up disk space
         run: |
           df -h /
-          # keep only the Xcode we are going to use
-          KEEP=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
-          if [ -z "$KEEP" ]; then KEEP=$(ls -d /Applications/Xcode*.app | sort -V | tail -1); fi
-          echo "Keeping $KEEP"
+          realpath_of() { python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$1"; }
+          # drop every Xcode bundle except the one we selected (resolve symlinks so we
+          # never delete the target the selected symlink points at)
           for app in /Applications/Xcode*.app; do
-            if [ "$app" != "$KEEP" ]; then sudo rm -rf "$app"; fi
+            if [ "$(realpath_of "$app")" != "$SELECTED_XCODE" ]; then
+              sudo rm -rf "$app"
+            fi
           done
           sudo rm -rf ~/Library/Developer/CoreSimulator/Caches || true
-          df -h /
-
-      - name: Select Xcode
-        run: |
-          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
-          if [ -z "$XCODE" ]; then XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1); fi
-          sudo xcode-select -s "$XCODE/Contents/Developer"
           xcodebuild -version
+          df -h /
 
       - name: Compute build number
         run: |
