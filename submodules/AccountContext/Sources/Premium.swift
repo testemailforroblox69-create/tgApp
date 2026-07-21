@@ -337,10 +337,21 @@ public struct AccountFreezeConfiguration {
     public static func with(appConfiguration: AppConfiguration) -> AccountFreezeConfiguration {
         let defaultValue = self.defaultValue
         if let data = appConfiguration.data {
+            // A zero date means "not frozen", not "frozen since the epoch". Some servers
+            // send an explicit zero triplet rather than omitting the keys, because clients
+            // that merge app config into persistent storage need it to converge after an
+            // unfreeze. Treating the key's mere presence as frozen would freeze everyone.
+            func date(_ key: String) -> Int32? {
+                guard let value = (data[key] as? Double).flatMap(Int32.init), value != 0 else {
+                    return nil
+                }
+                return value
+            }
+            let freezeAppealUrl = data["freeze_appeal_url"] as? String
             return AccountFreezeConfiguration(
-                freezeSinceDate: (data["freeze_since_date"] as? Double).flatMap(Int32.init) ?? defaultValue.freezeSinceDate,
-                freezeUntilDate: (data["freeze_until_date"] as? Double).flatMap(Int32.init) ?? defaultValue.freezeUntilDate,
-                freezeAppealUrl: data["freeze_appeal_url"] as? String ?? defaultValue.freezeAppealUrl
+                freezeSinceDate: date("freeze_since_date") ?? defaultValue.freezeSinceDate,
+                freezeUntilDate: date("freeze_until_date") ?? defaultValue.freezeUntilDate,
+                freezeAppealUrl: (freezeAppealUrl?.isEmpty == false ? freezeAppealUrl : nil) ?? defaultValue.freezeAppealUrl
             )
         } else {
             return defaultValue
