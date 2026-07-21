@@ -85,27 +85,42 @@ jobs:
             --configuration="${{ inputs.configuration }}" \
             --buildNumber="$BUILD_NUMBER"
 
-      - name: Collect artifacts
+      - name: Collect IPA
         run: |
           set -x
           mkdir -p build/artifacts
-          for f in bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/Telegram.ipa; do
-            cp "$f" build/artifacts/
-          done
-          mkdir -p build/DSYMs
-          for f in bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/*.dSYM; do
-            cp -R "$f" build/DSYMs/ || true
-          done
-          zip -r build/artifacts/Telegram.DSYMs.zip build/DSYMs 1>/dev/null || true
+          IPA="bazel-bin/Telegram/Telegram.ipa"
+          if [ ! -f "$IPA" ]; then
+            IPA=$(find -L bazel-out -name Telegram.ipa -type f | head -1)
+          fi
+          if [ -z "$IPA" ] || [ ! -f "$IPA" ]; then echo "No IPA produced"; exit 1; fi
+          cp "$IPA" build/artifacts/
           ls -lh build/artifacts
 
-      - name: Upload artifact
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: Telegram-${{ env.APP_VERSION }}-${{ env.BUILD_NUMBER }}
-          path: build/artifacts/*
+          path: build/artifacts/Telegram.ipa
           if-no-files-found: error
           retention-days: 30
+
+      - name: Collect dSYMs
+        continue-on-error: true
+        run: |
+          mkdir -p build/DSYMs
+          cp -R bazel-bin/Telegram/*.dSYM build/DSYMs/ || true
+          zip -qr build/Telegram.DSYMs.zip build/DSYMs
+          ls -lh build/Telegram.DSYMs.zip
+
+      - name: Upload dSYMs
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: Telegram-${{ env.APP_VERSION }}-${{ env.BUILD_NUMBER }}-dSYMs
+          path: build/Telegram.DSYMs.zip
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Create release
         if: ${{ inputs.makeRelease }}
@@ -116,4 +131,4 @@ jobs:
           body: |
             Unsigned build of the gramsrv-patched Telegram for iOS.
             Points at 217.60.245.50:2398 (DC 2). Re-sign with Sideloadly / AltStore before installing.
-          files: build/artifacts/*
+          files: build/artifacts/Telegram.ipa
